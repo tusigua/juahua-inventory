@@ -12,6 +12,7 @@
       --card: #ffffff;
       --text: #1e293b;
       --border: #e2e8f0;
+      --danger: #ef4444;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
@@ -20,6 +21,58 @@
       margin: 0;
       padding: 16px;
     }
+
+    /* 密碼鎖定畫面遮罩 */
+    #lockScreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #0f172a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    .lock-box {
+      background: #ffffff;
+      padding: 32px 28px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      text-align: center;
+      max-width: 360px;
+      width: 90%;
+    }
+    .lock-box h3 { margin-top: 0; margin-bottom: 8px; color: #1e293b; font-size: 20px; }
+    .lock-box p { color: #64748b; font-size: 14px; margin-bottom: 20px; }
+    .lock-box input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 16px;
+      text-align: center;
+      outline: none;
+      margin-bottom: 14px;
+    }
+    .lock-box input:focus { border-color: var(--primary); }
+    .btn-unlock {
+      width: 100%;
+      padding: 12px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-unlock:hover { background: var(--primary-hover); }
+    .lock-err-msg { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
+
+    /* 主畫面容器 */
     .container {
       max-width: 1200px;
       margin: 0 auto;
@@ -27,6 +80,7 @@
       padding: 24px;
       border-radius: 10px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      display: none; /* 驗證通過前不顯示 */
     }
     
     /* 頂部列 */
@@ -78,6 +132,8 @@
     .btn-primary:hover { background: var(--primary-hover); }
     .btn-dark { background: #334155; color: white; }
     .btn-dark:hover { background: #1e293b; }
+    .btn-logout { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+    .btn-logout:hover { background: #e2e8f0; color: #334155; }
 
     /* 表單區塊 */
     #addFormPanel {
@@ -174,7 +230,19 @@
 </head>
 <body>
 
-<div class="container">
+<!-- 1. 密碼鎖畫面 -->
+<div id="lockScreen">
+  <div class="lock-box">
+    <h3>🔒 內部庫存系統</h3>
+    <p>請輸入通行密碼以解鎖存取權限</p>
+    <input type="password" id="passInput" placeholder="請輸入通行密碼" autofocus />
+    <button class="btn-unlock" onclick="verifyPassword()">驗證進入</button>
+    <div id="lockError" class="lock-err-msg">❌ 密碼不正確，請重新輸入！</div>
+  </div>
+</div>
+
+<!-- 2. 主要功能介面 -->
+<div class="container" id="mainContainer">
   <div class="header">
     <h2>📦 設備材料庫存管理看板</h2>
     <div class="header-actions">
@@ -184,6 +252,7 @@
       </div>
       <button class="btn-dark" onclick="fetchInventory()">🔄 重新整理</button>
       <button class="btn-primary" onclick="toggleAddForm()">➕ 新增品項</button>
+      <button class="btn-logout" onclick="lockSystem()" title="鎖定畫面">🔒 登出</button>
     </div>
   </div>
 
@@ -229,9 +298,18 @@
 </div>
 
 <script>
+  // ==========================================
+  // ⚙️ 系統設定區
+  // ==========================================
+  const SYSTEM_PASSWORD = "jh888"; // 👈 在這裡自訂你的通行密碼！
   const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljJuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLOa3MNy2bWeK6yu9zESLXe/exec";
 
   let inventoryData = [];
+
+  const lockScreen = document.getElementById("lockScreen");
+  const mainContainer = document.getElementById("mainContainer");
+  const passInput = document.getElementById("passInput");
+  const lockError = document.getElementById("lockError");
 
   const inventoryList = document.getElementById("inventoryList");
   const searchBox = document.getElementById("searchBox");
@@ -239,7 +317,55 @@
   const addItemForm = document.getElementById("addItemForm");
   const operatorInput = document.getElementById("operatorName");
 
-  // 自動記住上次輸入的姓名
+  // ------------------------------------------
+  // 密碼驗證邏輯
+  // ------------------------------------------
+  function checkAuth() {
+    if (localStorage.getItem("inv_auth") === "passed") {
+      unlockSuccess();
+    } else {
+      lockScreen.style.display = "flex";
+      mainContainer.style.display = "none";
+    }
+  }
+
+  function verifyPassword() {
+    if (passInput.value === SYSTEM_PASSWORD) {
+      localStorage.setItem("inv_auth", "passed");
+      lockError.style.display = "none";
+      unlockSuccess();
+    } else {
+      lockError.style.display = "block";
+      passInput.value = "";
+      passInput.focus();
+    }
+  }
+
+  // 支援按 Enter 鍵解鎖
+  passInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") verifyPassword();
+  });
+
+  function unlockSuccess() {
+    lockScreen.style.display = "none";
+    mainContainer.style.display = "block";
+    // 解鎖後才開始抓雲端資料
+    if (inventoryData.length === 0) {
+      fetchInventory();
+    }
+  }
+
+  function lockSystem() {
+    localStorage.removeItem("inv_auth");
+    lockScreen.style.display = "flex";
+    mainContainer.style.display = "none";
+    passInput.value = "";
+    lockError.style.display = "none";
+  }
+
+  // ------------------------------------------
+  // 人員與庫存管理核心
+  // ------------------------------------------
   operatorInput.value = localStorage.getItem("inventory_operator") || "";
   operatorInput.addEventListener("input", (e) => {
     localStorage.setItem("inventory_operator", e.target.value.trim());
@@ -249,7 +375,7 @@
     addFormPanel.style.display = addFormPanel.style.display === "block" ? "none" : "block";
   }
 
-  // 1. 抓取資料
+  // 1. 從 Google 試算表載入資料
   async function fetchInventory() {
     inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">載入雲端試算表中，請稍候...</td></tr>`;
     try {
@@ -304,7 +430,7 @@
     renderTable(e.target.value);
   });
 
-  // 4. 調整數量 (包含人員與時間紀錄)
+  // 4. 調整數量 (+1 / -1)
   window.adjustQty = async function(partNo, change) {
     const operator = operatorInput.value.trim();
     if (!operator) {
@@ -322,12 +448,10 @@
       return;
     }
 
-    // 前端即時反應
     item.qty = currentQty + change;
     const qtySpan = document.getElementById(`qty-${partNo}`);
     if (qtySpan) qtySpan.innerText = item.qty;
 
-    // 傳送異動人員到雲端
     try {
       await fetch(API_URL, {
         method: "POST",
@@ -386,7 +510,8 @@
     }
   });
 
-  fetchInventory();
+  // 初始進入先檢查是否已有授權記號
+  checkAuth();
 </script>
 
 </body>
