@@ -163,9 +163,13 @@
     }
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
       margin-top: 10px;
+    }
+    .input-field-group {
+      display: flex;
+      flex-direction: column;
     }
     input, select {
       padding: 10px;
@@ -174,12 +178,21 @@
       font-size: 14px;
       outline: none;
       background: #fff;
+      box-sizing: border-box;
+      width: 100%;
     }
     input:focus, select:focus { border-color: var(--primary); }
+    .partno-highlight {
+      background-color: #ecfeff !important;
+      border-color: #06b6d4 !important;
+      font-weight: bold;
+      color: #0e7490;
+    }
     .auto-gen-hint {
       font-size: 12px;
       color: #0284c7;
       margin-top: 4px;
+      line-height: 1.3;
     }
 
     /* 搜尋列 */
@@ -282,23 +295,53 @@
 
   <!-- 新增品項表單 (含自動產生貨號) -->
   <div id="addFormPanel">
-    <strong>新增設備材料（自動推薦最新貨號）：</strong>
+    <strong style="font-size: 15px; color: #0f172a;">新增設備材料到商品總表：</strong>
     <form id="addItemForm" class="form-grid">
-      <div>
-        <input type="text" id="addCat" placeholder="類別代號 (例: CA, CP)" required list="categoryList" oninput="autoSuggestPartNo()" style="width:100%; box-sizing:border-box;">
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">類別代號 (選取或輸入)</label>
+        <input type="text" id="addCat" placeholder="例: CA, CP, PC" required list="categoryList" autocomplete="off">
         <datalist id="categoryList"></datalist>
       </div>
-      <div>
-        <input type="text" id="addPartNo" placeholder="商品貨號 (自動產生)" required style="width:100%; box-sizing:border-box;">
-        <div class="auto-gen-hint" id="partNoHint">💡 輸入類別自動推算貨號</div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">商品貨號 (自動推算)</label>
+        <input type="text" id="addPartNo" class="partno-highlight" placeholder="自動推算中..." required>
+        <div class="auto-gen-hint" id="partNoHint">💡 輸入類別代號會自動帶出下一號</div>
       </div>
-      <input type="text" id="addName" placeholder="品名" required>
-      <input type="text" id="addBrand" placeholder="廠牌/廠商">
-      <input type="text" id="addSpec" placeholder="型號/規格">
-      <input type="number" id="addQty" placeholder="初始庫存" required min="0">
-      <input type="text" id="addLocation" placeholder="存放位置 (例: A架)">
-      <input type="text" id="addNote" placeholder="備註說明">
-      <button type="submit" class="btn-primary" id="btnSubmitAdd">確認新增至雲端</button>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">品名</label>
+        <input type="text" id="addName" placeholder="商品品名" required>
+      </div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">廠牌/廠商</label>
+        <input type="text" id="addBrand" placeholder="例: 羅技 / 研華">
+      </div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">型號/規格</label>
+        <input type="text" id="addSpec" placeholder="例: 480GB / Type-C">
+      </div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">初始庫存</label>
+        <input type="number" id="addQty" placeholder="庫存數量" required min="0">
+      </div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">存放位置</label>
+        <input type="text" id="addLocation" placeholder="例: A架 / 3878車上">
+      </div>
+
+      <div class="input-field-group">
+        <label style="font-size: 12px; margin-bottom: 3px; font-weight: bold; color: #475569;">備註說明</label>
+        <input type="text" id="addNote" placeholder="備註">
+      </div>
+
+      <div style="grid-column: 1 / -1; margin-top: 6px;">
+        <button type="submit" class="btn-primary" id="btnSubmitAdd" style="width: 100%; padding: 12px; font-size: 15px;">確認新增至雲端</button>
+      </div>
     </form>
   </div>
 
@@ -408,11 +451,16 @@
   });
 
   function toggleAddForm() {
-    addFormPanel.style.display = addFormPanel.style.display === "block" ? "none" : "block";
-    updateCategoryDatalist();
+    const isShowing = addFormPanel.style.display === "block";
+    addFormPanel.style.display = isShowing ? "none" : "block";
+    if (!isShowing) {
+      updateCategoryDatalist();
+      // 如果已經有輸入類別，立即推算一次
+      if (addCatInput.value.trim()) autoSuggestPartNo();
+    }
   }
 
-  // 排序核心函式：先依類別字母排序，再依貨號數字大小排序
+  // 排序：先依類別字母排序，再依貨號數字大小排序
   function sortInventory(data) {
     return data.sort((a, b) => {
       const catA = String(a.category || "").toUpperCase();
@@ -425,30 +473,31 @@
     });
   }
 
-  // 更新分類建議下拉清單
+  // 更新類別下拉選單
   function updateCategoryDatalist() {
-    const cats = [...new Set(inventoryData.map(i => String(i.category || "").trim()).filter(Boolean))].sort();
-    categoryListDatalist.innerHTML = cats.map(c => `<option value="${c}">`).join("");
+    const cats = [...new Set(inventoryData.map(i => String(i.category || "").trim().toUpperCase()).filter(Boolean))].sort();
+    categoryListDatalist.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join("");
   }
 
-  // 自動推算最新商品貨號 (例如輸入 CA -> 自動填 CA0015)
+  // 核心：精確推算最新貨號
   function autoSuggestPartNo() {
     const selectedCat = addCatInput.value.trim().toUpperCase();
     if (!selectedCat) {
-      partNoHint.innerText = "💡 輸入類別自動推算貨號";
+      addPartNoInput.value = "";
+      partNoHint.innerText = "💡 請先在左邊輸入類別代號 (如 CA, CP)";
       return;
     }
 
     let maxNum = 0;
-    let foundExisting = false;
+    let found = false;
 
     inventoryData.forEach(item => {
       const p = String(item.partNo || "").trim().toUpperCase();
-      // 比對是否以此類別開頭，後接純數字
       if (p.startsWith(selectedCat)) {
-        const numPart = p.replace(selectedCat, "");
+        // 取出類別後的純數字
+        const numPart = p.substring(selectedCat.length);
         if (/^\d+$/.test(numPart)) {
-          foundExisting = true;
+          found = true;
           const val = parseInt(numPart, 10);
           if (val > maxNum) maxNum = val;
         }
@@ -456,13 +505,21 @@
     });
 
     const nextNum = maxNum + 1;
-    // 預設 4 位數補零 (例如 1 -> 0001, 15 -> 0015)
+    // 自動補 4 位零 (例如 CA0001 ~ CA0015)
     const nextPartNo = `${selectedCat}${String(nextNum).padStart(4, "0")}`;
     addPartNoInput.value = nextPartNo;
-    partNoHint.innerText = foundExisting 
-      ? `✅ 已偵測最新最大號為 ${selectedCat}${String(maxNum).padStart(4, "0")}，為您推薦 ${nextPartNo}`
-      : `✨ 建立新類別首筆貨號：${nextPartNo}`;
+
+    if (found) {
+      partNoHint.innerHTML = `<span style="color: #059669; font-weight: bold;">✔ 偵測到現有最大號為 ${selectedCat}${String(maxNum).padStart(4, "0")}，已為您自動填入 ${nextPartNo}</span>`;
+    } else {
+      partNoHint.innerHTML = `<span style="color: #0284c7; font-weight: bold;">✨ 新類別起始編號：${nextPartNo}</span>`;
+    }
   }
+
+  // 綁定類別輸入框事件 (輸入、選取、貼上都即時觸發)
+  addCatInput.addEventListener("input", autoSuggestPartNo);
+  addCatInput.addEventListener("change", autoSuggestPartNo);
+  addCatInput.addEventListener("blur", autoSuggestPartNo);
 
   async function fetchInventory() {
     inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">載入雲端試算表中，請稍候...</td></tr>`;
@@ -566,7 +623,7 @@
 
     const partNo = addPartNoInput.value.trim().toUpperCase();
     
-    // 防呆：檢查是否已有重複貨號
+    // 防呆檢查
     const isDuplicate = inventoryData.some(i => String(i.partNo).toUpperCase() === partNo);
     if (isDuplicate) {
       alert(`⚠️ 貨號「${partNo}」已存在於系統中！請檢查或變更貨號。`);
@@ -598,7 +655,7 @@
       inventoryData = sortInventory(inventoryData);
       renderTable(searchBox.value);
       addItemForm.reset();
-      partNoHint.innerText = "💡 輸入類別自動推算貨號";
+      partNoHint.innerText = "💡 輸入類別代號會自動帶出下一號";
       toggleAddForm();
     } catch (e) {
       alert("新增失敗，請稍後再試！");
