@@ -13,6 +13,7 @@
       --text: #1e293b;
       --border: #e2e8f0;
       --danger: #ef4444;
+      --success: #10b981;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
@@ -22,7 +23,7 @@
       padding: 16px;
     }
 
-    /* 密碼鎖定畫面遮罩 */
+    /* 密碼鎖畫面 */
     #lockScreen {
       position: fixed;
       top: 0;
@@ -47,7 +48,6 @@
     .lock-box h3 { margin-top: 0; margin-bottom: 8px; color: #1e293b; font-size: 20px; }
     .lock-box p { color: #64748b; font-size: 14px; margin-bottom: 20px; }
     
-    /* 密碼輸入框與眼睛按鈕容器 */
     .password-wrapper {
       position: relative;
       display: flex;
@@ -102,7 +102,6 @@
       display: none;
     }
     
-    /* 頂部列 */
     .header {
       display: flex;
       justify-content: space-between;
@@ -116,7 +115,6 @@
     h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; }
     .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     
-    /* 操作人員輸入框 */
     .user-tag-box {
       display: flex;
       align-items: center;
@@ -159,7 +157,7 @@
       display: none;
       background: #f8fafc;
       border: 1px solid var(--border);
-      padding: 16px;
+      padding: 18px;
       border-radius: 8px;
       margin-bottom: 20px;
     }
@@ -169,14 +167,20 @@
       gap: 10px;
       margin-top: 10px;
     }
-    input {
+    input, select {
       padding: 10px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       font-size: 14px;
       outline: none;
+      background: #fff;
     }
-    input:focus { border-color: var(--primary); }
+    input:focus, select:focus { border-color: var(--primary); }
+    .auto-gen-hint {
+      font-size: 12px;
+      color: #0284c7;
+      margin-top: 4px;
+    }
 
     /* 搜尋列 */
     .search-bar {
@@ -213,7 +217,6 @@
     }
     tr:hover { background: #f8fafc; }
 
-    /* 標籤樣式 */
     .cat-badge {
       background: #e2e8f0;
       color: #334155;
@@ -249,7 +252,7 @@
 </head>
 <body>
 
-<!-- 1. 密碼鎖畫面 -->
+<!-- 密碼鎖 -->
 <div id="lockScreen">
   <div class="lock-box">
     <h3>🔒 內部庫存系統</h3>
@@ -263,7 +266,7 @@
   </div>
 </div>
 
-<!-- 2. 主要功能介面 -->
+<!-- 主畫面 -->
 <div class="container" id="mainContainer">
   <div class="header">
     <h2>📦 設備材料庫存管理看板</h2>
@@ -277,16 +280,22 @@
     </div>
   </div>
 
-  <!-- 新增品項表單 -->
+  <!-- 新增品項表單 (含自動產生貨號) -->
   <div id="addFormPanel">
-    <strong>新增設備材料到商品總表：</strong>
+    <strong>新增設備材料（自動推薦最新貨號）：</strong>
     <form id="addItemForm" class="form-grid">
-      <input type="text" id="addCat" placeholder="類別代號 (例: CA, PC)" required>
-      <input type="text" id="addPartNo" placeholder="商品貨號 (例: CA0015)" required>
+      <div>
+        <input type="text" id="addCat" placeholder="類別代號 (例: CA, CP)" required list="categoryList" oninput="autoSuggestPartNo()" style="width:100%; box-sizing:border-box;">
+        <datalist id="categoryList"></datalist>
+      </div>
+      <div>
+        <input type="text" id="addPartNo" placeholder="商品貨號 (自動產生)" required style="width:100%; box-sizing:border-box;">
+        <div class="auto-gen-hint" id="partNoHint">💡 輸入類別自動推算貨號</div>
+      </div>
       <input type="text" id="addName" placeholder="品名" required>
       <input type="text" id="addBrand" placeholder="廠牌/廠商">
       <input type="text" id="addSpec" placeholder="型號/規格">
-      <input type="number" id="addQty" placeholder="庫存數量" required min="0">
+      <input type="number" id="addQty" placeholder="初始庫存" required min="0">
       <input type="text" id="addLocation" placeholder="存放位置 (例: A架)">
       <input type="text" id="addNote" placeholder="備註說明">
       <button type="submit" class="btn-primary" id="btnSubmitAdd">確認新增至雲端</button>
@@ -335,8 +344,11 @@
   const addFormPanel = document.getElementById("addFormPanel");
   const addItemForm = document.getElementById("addItemForm");
   const operatorInput = document.getElementById("operatorName");
+  const addCatInput = document.getElementById("addCat");
+  const addPartNoInput = document.getElementById("addPartNo");
+  const partNoHint = document.getElementById("partNoHint");
+  const categoryListDatalist = document.getElementById("categoryList");
 
-  // 切換眼睛顯示/隱藏密碼
   function togglePasswordVisibility() {
     if (passInput.type === "password") {
       passInput.type = "text";
@@ -347,7 +359,6 @@
     }
   }
 
-  // 檢查是否已登入
   function checkAuth() {
     if (localStorage.getItem("inv_auth") === "passed") {
       unlockSuccess();
@@ -398,6 +409,59 @@
 
   function toggleAddForm() {
     addFormPanel.style.display = addFormPanel.style.display === "block" ? "none" : "block";
+    updateCategoryDatalist();
+  }
+
+  // 排序核心函式：先依類別字母排序，再依貨號數字大小排序
+  function sortInventory(data) {
+    return data.sort((a, b) => {
+      const catA = String(a.category || "").toUpperCase();
+      const catB = String(b.category || "").toUpperCase();
+      if (catA !== catB) return catA.localeCompare(catB);
+      
+      const partA = String(a.partNo || "").toUpperCase();
+      const partB = String(b.partNo || "").toUpperCase();
+      return partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }
+
+  // 更新分類建議下拉清單
+  function updateCategoryDatalist() {
+    const cats = [...new Set(inventoryData.map(i => String(i.category || "").trim()).filter(Boolean))].sort();
+    categoryListDatalist.innerHTML = cats.map(c => `<option value="${c}">`).join("");
+  }
+
+  // 自動推算最新商品貨號 (例如輸入 CA -> 自動填 CA0015)
+  function autoSuggestPartNo() {
+    const selectedCat = addCatInput.value.trim().toUpperCase();
+    if (!selectedCat) {
+      partNoHint.innerText = "💡 輸入類別自動推算貨號";
+      return;
+    }
+
+    let maxNum = 0;
+    let foundExisting = false;
+
+    inventoryData.forEach(item => {
+      const p = String(item.partNo || "").trim().toUpperCase();
+      // 比對是否以此類別開頭，後接純數字
+      if (p.startsWith(selectedCat)) {
+        const numPart = p.replace(selectedCat, "");
+        if (/^\d+$/.test(numPart)) {
+          foundExisting = true;
+          const val = parseInt(numPart, 10);
+          if (val > maxNum) maxNum = val;
+        }
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    // 預設 4 位數補零 (例如 1 -> 0001, 15 -> 0015)
+    const nextPartNo = `${selectedCat}${String(nextNum).padStart(4, "0")}`;
+    addPartNoInput.value = nextPartNo;
+    partNoHint.innerText = foundExisting 
+      ? `✅ 已偵測最新最大號為 ${selectedCat}${String(maxNum).padStart(4, "0")}，為您推薦 ${nextPartNo}`
+      : `✨ 建立新類別首筆貨號：${nextPartNo}`;
   }
 
   async function fetchInventory() {
@@ -405,6 +469,8 @@
     try {
       const res = await fetch(API_URL);
       inventoryData = await res.json();
+      inventoryData = sortInventory(inventoryData);
+      updateCategoryDatalist();
       renderTable(searchBox.value);
     } catch (err) {
       console.error(err);
@@ -498,13 +564,23 @@
       return;
     }
 
+    const partNo = addPartNoInput.value.trim().toUpperCase();
+    
+    // 防呆：檢查是否已有重複貨號
+    const isDuplicate = inventoryData.some(i => String(i.partNo).toUpperCase() === partNo);
+    if (isDuplicate) {
+      alert(`⚠️ 貨號「${partNo}」已存在於系統中！請檢查或變更貨號。`);
+      addPartNoInput.focus();
+      return;
+    }
+
     const btn = document.getElementById("btnSubmitAdd");
     btn.disabled = true;
     btn.innerText = "寫入雲端中...";
 
     const newItem = {
-      category: document.getElementById("addCat").value.trim(),
-      partNo: document.getElementById("addPartNo").value.trim(),
+      category: addCatInput.value.trim().toUpperCase(),
+      partNo: partNo,
       name: document.getElementById("addName").value.trim(),
       brand: document.getElementById("addBrand").value.trim(),
       spec: document.getElementById("addSpec").value.trim(),
@@ -519,8 +595,10 @@
         body: JSON.stringify({ action: "add", data: newItem, operator: operator })
       });
       inventoryData.push(newItem);
+      inventoryData = sortInventory(inventoryData);
       renderTable(searchBox.value);
       addItemForm.reset();
+      partNoHint.innerText = "💡 輸入類別自動推算貨號";
       toggleAddForm();
     } catch (e) {
       alert("新增失敗，請稍後再試！");
