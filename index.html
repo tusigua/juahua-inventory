@@ -195,15 +195,32 @@
       line-height: 1.3;
     }
 
-    /* 搜尋列 */
+    /* 搜尋與篩選列 */
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .category-filter {
+      min-width: 180px;
+      flex: 1;
+      padding: 12px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: bold;
+      color: #1e293b;
+      cursor: pointer;
+    }
     .search-bar {
-      width: 100%;
+      flex: 3;
       box-sizing: border-box;
       padding: 12px 14px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       font-size: 15px;
-      margin-bottom: 16px;
+      min-width: 240px;
     }
 
     /* 表格 */
@@ -345,8 +362,13 @@
     </form>
   </div>
 
-  <!-- 快速搜尋列 -->
-  <input type="text" id="searchBox" class="search-bar" placeholder="🔍 快速搜尋商品貨號、品名、規格型號、存放位置 (如: A架、3878車上)...">
+  <!-- 分類篩選下拉選單與搜尋列 -->
+  <div class="filter-bar">
+    <select id="categoryFilter" class="category-filter">
+      <option value="ALL">📁 所有分類 (全部顯示)</option>
+    </select>
+    <input type="text" id="searchBox" class="search-bar" placeholder="🔍 快速搜尋商品貨號、品名、規格型號、存放位置...">
+  </div>
 
   <!-- 表格 -->
   <div class="table-container">
@@ -383,6 +405,7 @@
   const lockError = document.getElementById("lockError");
 
   const inventoryList = document.getElementById("inventoryList");
+  const categoryFilter = document.getElementById("categoryFilter");
   const searchBox = document.getElementById("searchBox");
   const addFormPanel = document.getElementById("addFormPanel");
   const addItemForm = document.getElementById("addItemForm");
@@ -454,13 +477,11 @@
     const isShowing = addFormPanel.style.display === "block";
     addFormPanel.style.display = isShowing ? "none" : "block";
     if (!isShowing) {
-      updateCategoryDatalist();
-      // 如果已經有輸入類別，立即推算一次
+      updateCategorySelectors();
       if (addCatInput.value.trim()) autoSuggestPartNo();
     }
   }
 
-  // 排序：先依類別字母排序，再依貨號數字大小排序
   function sortInventory(data) {
     return data.sort((a, b) => {
       const catA = String(a.category || "").toUpperCase();
@@ -473,13 +494,23 @@
     });
   }
 
-  // 更新類別下拉選單
-  function updateCategoryDatalist() {
+  // 自動動態更新篩選選單與新增選單
+  function updateCategorySelectors() {
+    const currentFilterVal = categoryFilter.value;
     const cats = [...new Set(inventoryData.map(i => String(i.category || "").trim().toUpperCase()).filter(Boolean))].sort();
+
+    // 1. 更新新增品項的 datalist
     categoryListDatalist.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join("");
+
+    // 2. 更新篩選下拉選單
+    categoryFilter.innerHTML = `<option value="ALL">📁 所有分類 (全部顯示)</option>` + 
+      cats.map(c => `<option value="${c}">📂 分類：${c}</option>`).join("");
+
+    if (cats.includes(currentFilterVal)) {
+      categoryFilter.value = currentFilterVal;
+    }
   }
 
-  // 核心：精確推算最新貨號
   function autoSuggestPartNo() {
     const selectedCat = addCatInput.value.trim().toUpperCase();
     if (!selectedCat) {
@@ -494,7 +525,6 @@
     inventoryData.forEach(item => {
       const p = String(item.partNo || "").trim().toUpperCase();
       if (p.startsWith(selectedCat)) {
-        // 取出類別後的純數字
         const numPart = p.substring(selectedCat.length);
         if (/^\d+$/.test(numPart)) {
           found = true;
@@ -505,7 +535,6 @@
     });
 
     const nextNum = maxNum + 1;
-    // 自動補 4 位零 (例如 CA0001 ~ CA0015)
     const nextPartNo = `${selectedCat}${String(nextNum).padStart(4, "0")}`;
     addPartNoInput.value = nextPartNo;
 
@@ -516,7 +545,6 @@
     }
   }
 
-  // 綁定類別輸入框事件 (輸入、選取、貼上都即時觸發)
   addCatInput.addEventListener("input", autoSuggestPartNo);
   addCatInput.addEventListener("change", autoSuggestPartNo);
   addCatInput.addEventListener("blur", autoSuggestPartNo);
@@ -527,25 +555,36 @@
       const res = await fetch(API_URL);
       inventoryData = await res.json();
       inventoryData = sortInventory(inventoryData);
-      updateCategoryDatalist();
-      renderTable(searchBox.value);
+      updateCategorySelectors();
+      renderTable();
     } catch (err) {
       console.error(err);
       inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">連線失敗，請檢查網路連線或 Apps Script 部署狀態。</td></tr>`;
     }
   }
 
-  function renderTable(keyword = "") {
+  // 渲染表格 (同時套用分類篩選與文字搜尋)
+  function renderTable() {
     inventoryList.innerHTML = "";
-    const filterKey = keyword.toLowerCase().trim();
+    const selectedCategory = categoryFilter.value;
+    const filterKey = searchBox.value.toLowerCase().trim();
 
-    const filtered = inventoryData.filter(item => 
-      String(item.partNo || "").toLowerCase().includes(filterKey) ||
-      String(item.name || "").toLowerCase().includes(filterKey) ||
-      String(item.spec || "").toLowerCase().includes(filterKey) ||
-      String(item.location || "").toLowerCase().includes(filterKey) ||
-      String(item.note || "").toLowerCase().includes(filterKey)
-    );
+    const filtered = inventoryData.filter(item => {
+      const itemCat = String(item.category || "").trim().toUpperCase();
+      // 分類匹配條件
+      const matchCat = (selectedCategory === "ALL" || itemCat === selectedCategory);
+
+      // 關鍵字搜尋條件
+      const matchKey = !filterKey || (
+        String(item.partNo || "").toLowerCase().includes(filterKey) ||
+        String(item.name || "").toLowerCase().includes(filterKey) ||
+        String(item.spec || "").toLowerCase().includes(filterKey) ||
+        String(item.location || "").toLowerCase().includes(filterKey) ||
+        String(item.note || "").toLowerCase().includes(filterKey)
+      );
+
+      return matchCat && matchKey;
+    });
 
     if (filtered.length === 0) {
       inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">查無相符品項</td></tr>`;
@@ -571,9 +610,9 @@
     });
   }
 
-  searchBox.addEventListener("input", (e) => {
-    renderTable(e.target.value);
-  });
+  // 監聽分類變更與搜尋打字
+  categoryFilter.addEventListener("change", renderTable);
+  searchBox.addEventListener("input", renderTable);
 
   window.adjustQty = async function(partNo, change) {
     const operator = operatorInput.value.trim();
@@ -623,7 +662,6 @@
 
     const partNo = addPartNoInput.value.trim().toUpperCase();
     
-    // 防呆檢查
     const isDuplicate = inventoryData.some(i => String(i.partNo).toUpperCase() === partNo);
     if (isDuplicate) {
       alert(`⚠️ 貨號「${partNo}」已存在於系統中！請檢查或變更貨號。`);
@@ -653,7 +691,8 @@
       });
       inventoryData.push(newItem);
       inventoryData = sortInventory(inventoryData);
-      renderTable(searchBox.value);
+      updateCategorySelectors();
+      renderTable();
       addItemForm.reset();
       partNoHint.innerText = "💡 輸入類別代號會自動帶出下一號";
       toggleAddForm();
