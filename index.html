@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>設備材料庫存管理系統</title>
+  <style>
+    :root {
+      --primary: #1976d2;
+      --primary-hover: #1565c0;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --border: #e2e8f0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: var(--card);
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    
+    /* 頂部列 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 16px;
+    }
+    h2 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    
+    /* 操作人員輸入框 */
+    .user-tag-box {
+      display: flex;
+      align-items: center;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #3730a3;
+      font-weight: bold;
+    }
+    .user-tag-box input {
+      border: none;
+      background: transparent;
+      outline: none;
+      font-weight: bold;
+      color: #312e81;
+      width: 110px;
+      margin-left: 6px;
+    }
+
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-dark { background: #334155; color: white; }
+    .btn-dark:hover { background: #1e293b; }
+
+    /* 表單區塊 */
+    #addFormPanel {
+      display: none;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    input {
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus { border-color: var(--primary); }
+
+    /* 搜尋列 */
+    .search-bar {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
+
+    /* 表格 */
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      min-width: 850px;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 600;
+    }
+    tr:hover { background: #f8fafc; }
+
+    /* 標籤樣式 */
+    .cat-badge {
+      background: #e2e8f0;
+      color: #334155;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .location-badge {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .qty-badge {
+      font-size: 15px;
+      font-weight: bold;
+      color: #0f172a;
+    }
+    .btn-qty {
+      padding: 5px 10px;
+      margin-right: 4px;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      font-size: 13px;
+    }
+    .btn-qty:hover { background: #f1f5f9; }
+    .btn-qty:active { transform: scale(0.95); }
+    .status-hint { text-align: center; padding: 24px; color: #64748b; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h2>📦 設備材料庫存管理看板</h2>
+    <div class="header-actions">
+      <!-- 記錄人員名稱 -->
+      <div class="user-tag-box">
+        👤 人員：<input type="text" id="operatorName" placeholder="請輸入姓名" />
+      </div>
+      <button class="btn-dark" onclick="fetchInventory()">🔄 重新整理</button>
+      <button class="btn-primary" onclick="toggleAddForm()">➕ 新增品項</button>
+    </div>
+  </div>
+
+  <!-- 新增品項表單 -->
+  <div id="addFormPanel">
+    <strong>新增設備材料到商品總表：</strong>
+    <form id="addItemForm" class="form-grid">
+      <input type="text" id="addCat" placeholder="類別代號 (例: CA, PC)" required>
+      <input type="text" id="addPartNo" placeholder="商品貨號 (例: CA0015)" required>
+      <input type="text" id="addName" placeholder="品名" required>
+      <input type="text" id="addBrand" placeholder="廠牌/廠商">
+      <input type="text" id="addSpec" placeholder="型號/規格">
+      <input type="number" id="addQty" placeholder="庫存數量" required min="0">
+      <input type="text" id="addLocation" placeholder="存放位置 (例: A架)">
+      <input type="text" id="addNote" placeholder="備註說明">
+      <button type="submit" class="btn-primary" id="btnSubmitAdd">確認新增至雲端</button>
+    </form>
+  </div>
+
+  <!-- 快速搜尋列 -->
+  <input type="text" id="searchBox" class="search-bar" placeholder="🔍 快速搜尋商品貨號、品名、規格型號、存放位置 (如: A架、3878車上)...">
+
+  <!-- 表格 -->
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>商品貨號</th>
+          <th>類別</th>
+          <th>品名</th>
+          <th>型號 / 規格</th>
+          <th>存放位置</th>
+          <th>現有庫存</th>
+          <th>備註</th>
+          <th>快速操作</th>
+        </tr>
+      </thead>
+      <tbody id="inventoryList">
+        <tr><td colspan="8" class="status-hint">正在連線 Google 試算表載入資料...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljJuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLOa3MNy2bWeK6yu9zESLXe/exec";
+
+  let inventoryData = [];
+
+  const inventoryList = document.getElementById("inventoryList");
+  const searchBox = document.getElementById("searchBox");
+  const addFormPanel = document.getElementById("addFormPanel");
+  const addItemForm = document.getElementById("addItemForm");
+  const operatorInput = document.getElementById("operatorName");
+
+  // 自動記住上次輸入的姓名
+  operatorInput.value = localStorage.getItem("inventory_operator") || "";
+  operatorInput.addEventListener("input", (e) => {
+    localStorage.setItem("inventory_operator", e.target.value.trim());
+  });
+
+  function toggleAddForm() {
+    addFormPanel.style.display = addFormPanel.style.display === "block" ? "none" : "block";
+  }
+
+  // 1. 抓取資料
+  async function fetchInventory() {
+    inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">載入雲端試算表中，請稍候...</td></tr>`;
+    try {
+      const res = await fetch(API_URL);
+      inventoryData = await res.json();
+      renderTable(searchBox.value);
+    } catch (err) {
+      console.error(err);
+      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">連線失敗，請檢查網路連線或 Apps Script 部署狀態。</td></tr>`;
+    }
+  }
+
+  // 2. 渲染表格
+  function renderTable(keyword = "") {
+    inventoryList.innerHTML = "";
+    const filterKey = keyword.toLowerCase().trim();
+
+    const filtered = inventoryData.filter(item => 
+      String(item.partNo || "").toLowerCase().includes(filterKey) ||
+      String(item.name || "").toLowerCase().includes(filterKey) ||
+      String(item.spec || "").toLowerCase().includes(filterKey) ||
+      String(item.location || "").toLowerCase().includes(filterKey) ||
+      String(item.note || "").toLowerCase().includes(filterKey)
+    );
+
+    if (filtered.length === 0) {
+      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">查無相符品項</td></tr>`;
+      return;
+    }
+
+    filtered.forEach(item => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${item.partNo || ""}</strong></td>
+        <td><span class="cat-badge">${item.category || "-"}</span></td>
+        <td>${item.name || ""}</td>
+        <td><small style="color:#64748b;">${item.spec || "-"}</small></td>
+        <td><span class="location-badge">${item.location || "未標記"}</span></td>
+        <td><span class="qty-badge" id="qty-${item.partNo}">${item.qty}</span></td>
+        <td><small style="color:#475569;">${item.note || ""}</small></td>
+        <td>
+          <button class="btn-qty" onclick="adjustQty('${item.partNo}', 1)">+1 入庫</button>
+          <button class="btn-qty" onclick="adjustQty('${item.partNo}', -1)">-1 領用</button>
+        </td>
+      `;
+      inventoryList.appendChild(tr);
+    });
+  }
+
+  // 3. 搜尋過濾
+  searchBox.addEventListener("input", (e) => {
+    renderTable(e.target.value);
+  });
+
+  // 4. 調整數量 (包含人員與時間紀錄)
+  window.adjustQty = async function(partNo, change) {
+    const operator = operatorInput.value.trim();
+    if (!operator) {
+      alert("⚠️ 請先在右上角輸入「您的姓名」，方便登記異動紀錄！");
+      operatorInput.focus();
+      return;
+    }
+
+    const item = inventoryData.find(i => String(i.partNo) === String(partNo));
+    if (!item) return;
+
+    let currentQty = parseFloat(item.qty) || 0;
+    if (currentQty + change < 0) {
+      alert("庫存不能為負數！");
+      return;
+    }
+
+    // 前端即時反應
+    item.qty = currentQty + change;
+    const qtySpan = document.getElementById(`qty-${partNo}`);
+    if (qtySpan) qtySpan.innerText = item.qty;
+
+    // 傳送異動人員到雲端
+    try {
+      await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "updateQty",
+          partNo: partNo,
+          change: change,
+          operator: operator
+        })
+      });
+    } catch (e) {
+      alert("同步雲端失敗，請重新整頁！");
+      fetchInventory();
+    }
+  };
+
+  // 5. 新增品項
+  addItemForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const operator = operatorInput.value.trim();
+    if (!operator) {
+      alert("⚠️ 請先在右上角輸入「您的姓名」，以利登記建立者！");
+      operatorInput.focus();
+      return;
+    }
+
+    const btn = document.getElementById("btnSubmitAdd");
+    btn.disabled = true;
+    btn.innerText = "寫入雲端中...";
+
+    const newItem = {
+      category: document.getElementById("addCat").value.trim(),
+      partNo: document.getElementById("addPartNo").value.trim(),
+      name: document.getElementById("addName").value.trim(),
+      brand: document.getElementById("addBrand").value.trim(),
+      spec: document.getElementById("addSpec").value.trim(),
+      qty: document.getElementById("addQty").value.trim(),
+      location: document.getElementById("addLocation").value.trim(),
+      note: document.getElementById("addNote").value.trim()
+    };
+
+    try {
+      await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "add", data: newItem, operator: operator })
+      });
+      inventoryData.push(newItem);
+      renderTable(searchBox.value);
+      addItemForm.reset();
+      toggleAddForm();
+    } catch (e) {
+      alert("新增失敗，請稍後再試！");
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "確認新增至雲端";
+    }
+  });
+
+  fetchInventory();
+</script>
+
+</body>
+</html>
