@@ -23,7 +23,6 @@
       padding: 16px;
     }
 
-    /* 密碼鎖畫面 */
     #lockScreen {
       position: fixed;
       top: 0;
@@ -91,7 +90,6 @@
     .btn-unlock:hover { background: var(--primary-hover); }
     .lock-err-msg { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
 
-    /* 主畫面容器 */
     .container {
       max-width: 1200px;
       margin: 0 auto;
@@ -152,7 +150,6 @@
     .btn-logout { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
     .btn-logout:hover { background: #e2e8f0; color: #334155; }
 
-    /* 表單區塊 */
     #addFormPanel {
       display: none;
       background: #f8fafc;
@@ -195,7 +192,6 @@
       line-height: 1.3;
     }
 
-    /* 篩選與搜尋列 (三個並排/自動換行) */
     .filter-bar {
       display: flex;
       gap: 12px;
@@ -228,7 +224,6 @@
       min-width: 240px;
     }
 
-    /* 表格 */
     .table-container {
       overflow-x: auto;
       border: 1px solid var(--border);
@@ -287,7 +282,6 @@
 </head>
 <body>
 
-<!-- 密碼鎖 -->
 <div id="lockScreen">
   <div class="lock-box">
     <h3>🔒 內部庫存系統</h3>
@@ -301,7 +295,6 @@
   </div>
 </div>
 
-<!-- 主畫面 -->
 <div class="container" id="mainContainer">
   <div class="header">
     <h2>📦 設備材料庫存管理看板</h2>
@@ -309,13 +302,12 @@
       <div class="user-tag-box">
         👤 人員：<input type="text" id="operatorName" placeholder="請輸入姓名" />
       </div>
-      <button class="btn-dark" onclick="fetchInventory()">🔄 重新整理</button>
+      <button class="btn-dark" id="btnRefresh" onclick="fetchInventory(true)">🔄 重新整理</button>
       <button class="btn-primary" onclick="toggleAddForm()">➕ 新增品項</button>
       <button class="btn-logout" onclick="lockSystem()" title="鎖定畫面">🔒 登出</button>
     </div>
   </div>
 
-  <!-- 新增品項表單 (含自動產生貨號) -->
   <div id="addFormPanel">
     <strong style="font-size: 15px; color: #0f172a;">新增設備材料到商品總表：</strong>
     <form id="addItemForm" class="form-grid">
@@ -367,23 +359,18 @@
     </form>
   </div>
 
-  <!-- 篩選列：類別 + 安裝版本 + 搜尋框 -->
   <div class="filter-bar">
-    <!-- 1. 類別篩選 -->
     <select id="categoryFilter" class="filter-select">
       <option value="ALL">📁 所有分類 (全部顯示)</option>
     </select>
 
-    <!-- 2. 巡查設備安裝版本篩選 (雲端動態載入) -->
     <select id="versionFilter" class="filter-select version-select">
       <option value="ALL">🛠️ 【巡查設備安裝版本】</option>
     </select>
 
-    <!-- 3. 關鍵字搜尋 -->
     <input type="text" id="searchBox" class="search-bar" placeholder="🔍 快速搜尋商品貨號、品名、規格型號、存放位置...">
   </div>
 
-  <!-- 表格 -->
   <div class="table-container">
     <table>
       <thead>
@@ -407,10 +394,10 @@
 
 <script>
   const SYSTEM_PASSWORD = "jh888";
-  const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljJuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLOa3MNy2bWeK6yu9zESLXe/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljLuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLoa3MNy2bWeK6yu9zESLXe/exec";
 
   let inventoryData = [];
-  let versionList = []; // 存放安裝版本清單
+  let versionList = [];
 
   const lockScreen = document.getElementById("lockScreen");
   const mainContainer = document.getElementById("mainContainer");
@@ -429,6 +416,7 @@
   const addPartNoInput = document.getElementById("addPartNo");
   const partNoHint = document.getElementById("partNoHint");
   const categoryListDatalist = document.getElementById("categoryList");
+  const btnRefresh = document.getElementById("btnRefresh");
 
   function togglePasswordVisibility() {
     if (passInput.type === "password") {
@@ -468,9 +456,22 @@
   function unlockSuccess() {
     lockScreen.style.display = "none";
     mainContainer.style.display = "block";
-    if (inventoryData.length === 0) {
-      fetchInventory();
+    
+    // 優先讀取本機快取，達到秒開效果
+    const cachedData = localStorage.getItem("inv_cache_data");
+    const cachedVers = localStorage.getItem("inv_cache_vers");
+    if (cachedData) {
+      try {
+        inventoryData = JSON.parse(cachedData);
+        versionList = cachedVers ? JSON.parse(cachedVers) : [];
+        updateCategorySelectors();
+        updateVersionSelectors();
+        renderTable();
+      } catch(e) {}
     }
+
+    // 背景連線抓取最新雲端資料
+    fetchInventory();
   }
 
   function lockSystem() {
@@ -522,10 +523,9 @@
     }
   }
 
-  // 更新版本選單
   function updateVersionSelectors() {
     const currentVerVal = versionFilter.value;
-    versionFilter.innerHTML = `<option value="ALL">🛠️ 【巡查設備安裝版本】</option>` +
+    versionFilter.innerHTML = `<option value="ALL">🛠️ 【巡查設備安裝版本】(全部)</option>` +
       versionList.map(v => `<option value="${v.name}">${v.name}</option>`).join("");
 
     if (versionList.some(v => v.name === currentVerVal)) {
@@ -571,39 +571,75 @@
   addCatInput.addEventListener("change", autoSuggestPartNo);
   addCatInput.addEventListener("blur", autoSuggestPartNo);
 
-  async function fetchInventory() {
-    inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">載入雲端試算表中，請稍候...</td></tr>`;
-    try {
-      const res = await fetch(API_URL);
-      const json = await res.json();
-      
-      // 相容新舊 API 回傳格式
-      if (Array.isArray(json)) {
-        inventoryData = json;
-        versionList = [];
-      } else {
-        inventoryData = json.inventory || [];
-        versionList = json.versions || [];
-      }
+  // 具備「自動重試機制」與「快取儲存」的抓取函式
+  async function fetchInventory(isManual = false) {
+    if (btnRefresh) {
+      btnRefresh.disabled = true;
+      btnRefresh.innerText = "🔄 同步中...";
+    }
 
-      inventoryData = sortInventory(inventoryData);
-      updateCategorySelectors();
-      updateVersionSelectors();
-      renderTable();
-    } catch (err) {
-      console.error(err);
-      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">連線失敗，請檢查網路連線或 Apps Script 部署狀態。</td></tr>`;
+    if (inventoryData.length === 0) {
+      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">正在連線 Google 試算表載入資料 (初次載入約需 5~8 秒)...</td></tr>`;
+    }
+
+    let success = false;
+    let attempts = 0;
+    const maxAttempts = 2; // 連線卡住時自動重試
+
+    while (!success && attempts < maxAttempts) {
+      attempts++;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12秒逾時防護
+
+        const res = await fetch(API_URL, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        const json = await res.json();
+        
+        if (Array.isArray(json)) {
+          inventoryData = json;
+          versionList = [];
+        } else {
+          inventoryData = json.inventory || [];
+          versionList = json.versions || [];
+        }
+
+        inventoryData = sortInventory(inventoryData);
+
+        // 存入快取供下次秒開
+        localStorage.setItem("inv_cache_data", JSON.stringify(inventoryData));
+        localStorage.setItem("inv_cache_vers", JSON.stringify(versionList));
+
+        updateCategorySelectors();
+        updateVersionSelectors();
+        renderTable();
+        success = true;
+      } catch (err) {
+        console.warn(`第 ${attempts} 次連線嘗試逾時或失敗:`, err);
+        if (attempts >= maxAttempts) {
+          if (inventoryData.length === 0) {
+            inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">
+              ⚠️ 連線至 Google 伺服器逾時。<br>
+              請點擊右上角「🔄 重新整理」再試一次，或確認試算表網路正常。
+            </td></tr>`;
+          }
+        }
+      }
+    }
+
+    if (btnRefresh) {
+      btnRefresh.disabled = false;
+      btnRefresh.innerText = "🔄 重新整理";
     }
   }
 
-  // 渲染表格 (同時套用：類別篩選 + 安裝版本篩選 + 關鍵字搜尋)
   function renderTable() {
     inventoryList.innerHTML = "";
     const selectedCategory = categoryFilter.value;
     const selectedVersion = versionFilter.value;
     const filterKey = searchBox.value.toLowerCase().trim();
 
-    // 取得選取版本包含的貨號清單
     let allowedPartNos = null;
     if (selectedVersion !== "ALL") {
       const verObj = versionList.find(v => v.name === selectedVersion);
@@ -616,13 +652,8 @@
       const itemCat = String(item.category || "").trim().toUpperCase();
       const itemPartNo = String(item.partNo || "").trim().toUpperCase();
 
-      // 1. 分類條件
       const matchCat = (selectedCategory === "ALL" || itemCat === selectedCategory);
-
-      // 2. 版本條件 (若選了特定版本，貨號必須在版本清單中)
       const matchVersion = (!allowedPartNos || allowedPartNos.has(itemPartNo));
-
-      // 3. 搜尋條件
       const matchKey = !filterKey || (
         itemPartNo.toLowerCase().includes(filterKey) ||
         String(item.name || "").toLowerCase().includes(filterKey) ||
@@ -658,7 +689,6 @@
     });
   }
 
-  // 監聽所有篩選與搜尋
   categoryFilter.addEventListener("change", renderTable);
   versionFilter.addEventListener("change", renderTable);
   searchBox.addEventListener("input", renderTable);
@@ -683,6 +713,7 @@
     item.qty = currentQty + change;
     const qtySpan = document.getElementById(`qty-${partNo}`);
     if (qtySpan) qtySpan.innerText = item.qty;
+    localStorage.setItem("inv_cache_data", JSON.stringify(inventoryData));
 
     try {
       await fetch(API_URL, {
@@ -740,6 +771,7 @@
       });
       inventoryData.push(newItem);
       inventoryData = sortInventory(inventoryData);
+      localStorage.setItem("inv_cache_data", JSON.stringify(inventoryData));
       updateCategorySelectors();
       renderTable();
       addItemForm.reset();
