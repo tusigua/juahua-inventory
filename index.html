@@ -525,7 +525,7 @@
   // 更新版本選單
   function updateVersionSelectors() {
     const currentVerVal = versionFilter.value;
-    versionFilter.innerHTML = `<option value="ALL">🛠️ 【巡查設備安裝版本】(全部)</option>` +
+    versionFilter.innerHTML = `<option value="ALL">🛠️ 【巡查設備安裝版本】</option>` +
       versionList.map(v => `<option value="${v.name}">${v.name}</option>`).join("");
 
     if (versionList.some(v => v.name === currentVerVal)) {
