@@ -195,16 +195,16 @@
       line-height: 1.3;
     }
 
-    /* 搜尋與篩選列 */
+    /* 篩選與搜尋列 (三個並排/自動換行) */
     .filter-bar {
       display: flex;
       gap: 12px;
       margin-bottom: 16px;
       flex-wrap: wrap;
     }
-    .category-filter {
-      min-width: 180px;
-      flex: 1;
+    .filter-select {
+      flex: 1.2;
+      min-width: 200px;
       padding: 12px 14px;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
@@ -213,8 +213,13 @@
       color: #1e293b;
       cursor: pointer;
     }
+    .version-select {
+      background-color: #eff6ff;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+    }
     .search-bar {
-      flex: 3;
+      flex: 2;
       box-sizing: border-box;
       padding: 12px 14px;
       border: 1px solid #cbd5e1;
@@ -362,11 +367,19 @@
     </form>
   </div>
 
-  <!-- 分類篩選下拉選單與搜尋列 -->
+  <!-- 篩選列：類別 + 安裝版本 + 搜尋框 -->
   <div class="filter-bar">
-    <select id="categoryFilter" class="category-filter">
+    <!-- 1. 類別篩選 -->
+    <select id="categoryFilter" class="filter-select">
       <option value="ALL">📁 所有分類 (全部顯示)</option>
     </select>
+
+    <!-- 2. 巡查設備安裝版本篩選 (雲端動態載入) -->
+    <select id="versionFilter" class="filter-select version-select">
+      <option value="ALL">🛠️ 【巡查設備安裝版本】</option>
+    </select>
+
+    <!-- 3. 關鍵字搜尋 -->
     <input type="text" id="searchBox" class="search-bar" placeholder="🔍 快速搜尋商品貨號、品名、規格型號、存放位置...">
   </div>
 
@@ -397,6 +410,7 @@
   const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljJuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLOa3MNy2bWeK6yu9zESLXe/exec";
 
   let inventoryData = [];
+  let versionList = []; // 存放安裝版本清單
 
   const lockScreen = document.getElementById("lockScreen");
   const mainContainer = document.getElementById("mainContainer");
@@ -406,6 +420,7 @@
 
   const inventoryList = document.getElementById("inventoryList");
   const categoryFilter = document.getElementById("categoryFilter");
+  const versionFilter = document.getElementById("versionFilter");
   const searchBox = document.getElementById("searchBox");
   const addFormPanel = document.getElementById("addFormPanel");
   const addItemForm = document.getElementById("addItemForm");
@@ -494,20 +509,27 @@
     });
   }
 
-  // 自動動態更新篩選選單與新增選單
   function updateCategorySelectors() {
     const currentFilterVal = categoryFilter.value;
     const cats = [...new Set(inventoryData.map(i => String(i.category || "").trim().toUpperCase()).filter(Boolean))].sort();
 
-    // 1. 更新新增品項的 datalist
     categoryListDatalist.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join("");
-
-    // 2. 更新篩選下拉選單
     categoryFilter.innerHTML = `<option value="ALL">📁 所有分類 (全部顯示)</option>` + 
       cats.map(c => `<option value="${c}">📂 分類：${c}</option>`).join("");
 
     if (cats.includes(currentFilterVal)) {
       categoryFilter.value = currentFilterVal;
+    }
+  }
+
+  // 更新版本選單
+  function updateVersionSelectors() {
+    const currentVerVal = versionFilter.value;
+    versionFilter.innerHTML = `<option value="ALL">🛠️ 【巡查設備安裝版本】(全部)</option>` +
+      versionList.map(v => `<option value="${v.name}">${v.name}</option>`).join("");
+
+    if (versionList.some(v => v.name === currentVerVal)) {
+      versionFilter.value = currentVerVal;
     }
   }
 
@@ -553,9 +575,20 @@
     inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">載入雲端試算表中，請稍候...</td></tr>`;
     try {
       const res = await fetch(API_URL);
-      inventoryData = await res.json();
+      const json = await res.json();
+      
+      // 相容新舊 API 回傳格式
+      if (Array.isArray(json)) {
+        inventoryData = json;
+        versionList = [];
+      } else {
+        inventoryData = json.inventory || [];
+        versionList = json.versions || [];
+      }
+
       inventoryData = sortInventory(inventoryData);
       updateCategorySelectors();
+      updateVersionSelectors();
       renderTable();
     } catch (err) {
       console.error(err);
@@ -563,31 +596,46 @@
     }
   }
 
-  // 渲染表格 (同時套用分類篩選與文字搜尋)
+  // 渲染表格 (同時套用：類別篩選 + 安裝版本篩選 + 關鍵字搜尋)
   function renderTable() {
     inventoryList.innerHTML = "";
     const selectedCategory = categoryFilter.value;
+    const selectedVersion = versionFilter.value;
     const filterKey = searchBox.value.toLowerCase().trim();
+
+    // 取得選取版本包含的貨號清單
+    let allowedPartNos = null;
+    if (selectedVersion !== "ALL") {
+      const verObj = versionList.find(v => v.name === selectedVersion);
+      if (verObj) {
+        allowedPartNos = new Set(verObj.partNos.map(p => p.toUpperCase()));
+      }
+    }
 
     const filtered = inventoryData.filter(item => {
       const itemCat = String(item.category || "").trim().toUpperCase();
-      // 分類匹配條件
+      const itemPartNo = String(item.partNo || "").trim().toUpperCase();
+
+      // 1. 分類條件
       const matchCat = (selectedCategory === "ALL" || itemCat === selectedCategory);
 
-      // 關鍵字搜尋條件
+      // 2. 版本條件 (若選了特定版本，貨號必須在版本清單中)
+      const matchVersion = (!allowedPartNos || allowedPartNos.has(itemPartNo));
+
+      // 3. 搜尋條件
       const matchKey = !filterKey || (
-        String(item.partNo || "").toLowerCase().includes(filterKey) ||
+        itemPartNo.toLowerCase().includes(filterKey) ||
         String(item.name || "").toLowerCase().includes(filterKey) ||
         String(item.spec || "").toLowerCase().includes(filterKey) ||
         String(item.location || "").toLowerCase().includes(filterKey) ||
         String(item.note || "").toLowerCase().includes(filterKey)
       );
 
-      return matchCat && matchKey;
+      return matchCat && matchVersion && matchKey;
     });
 
     if (filtered.length === 0) {
-      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">查無相符品項</td></tr>`;
+      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">查無相符品項 (或該安裝版本尚未包含相應貨號)</td></tr>`;
       return;
     }
 
@@ -610,8 +658,9 @@
     });
   }
 
-  // 監聽分類變更與搜尋打字
+  // 監聽所有篩選與搜尋
   categoryFilter.addEventListener("change", renderTable);
+  versionFilter.addEventListener("change", renderTable);
   searchBox.addEventListener("input", renderTable);
 
   window.adjustQty = async function(partNo, change) {
