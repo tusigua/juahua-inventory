@@ -302,7 +302,7 @@
       <div class="user-tag-box">
         👤 人員：<input type="text" id="operatorName" placeholder="請輸入姓名" />
       </div>
-      <button class="btn-dark" id="btnRefresh" onclick="fetchInventory(true)">🔄 重新整理</button>
+      <button class="btn-dark" id="btnRefresh" onclick="fetchInventory()">🔄 重新整理</button>
       <button class="btn-primary" onclick="toggleAddForm()">➕ 新增品項</button>
       <button class="btn-logout" onclick="lockSystem()" title="鎖定畫面">🔒 登出</button>
     </div>
@@ -394,7 +394,7 @@
 
 <script>
   const SYSTEM_PASSWORD = "jh888";
-  const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljLuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLoa3MNy2bWeK6yu9zESLXe/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycbyP1g_ljJuLrnQNgr3Ny0NPKgM5wP7as0KmpNNkYaDwRoLOa3MNy2bWeK6yu9zESLXe/exec";
 
   let inventoryData = [];
   let versionList = [];
@@ -457,7 +457,7 @@
     lockScreen.style.display = "none";
     mainContainer.style.display = "block";
     
-    // 優先讀取本機快取，達到秒開效果
+    // 秒開：若有快取先載入
     const cachedData = localStorage.getItem("inv_cache_data");
     const cachedVers = localStorage.getItem("inv_cache_vers");
     if (cachedData) {
@@ -470,7 +470,6 @@
       } catch(e) {}
     }
 
-    // 背景連線抓取最新雲端資料
     fetchInventory();
   }
 
@@ -571,66 +570,50 @@
   addCatInput.addEventListener("change", autoSuggestPartNo);
   addCatInput.addEventListener("blur", autoSuggestPartNo);
 
-  // 具備「自動重試機制」與「快取儲存」的抓取函式
-  async function fetchInventory(isManual = false) {
+  // 乾淨寬容的抓取函式 (給 Google 足夠的喚醒時間)
+  async function fetchInventory() {
     if (btnRefresh) {
       btnRefresh.disabled = true;
       btnRefresh.innerText = "🔄 同步中...";
     }
 
     if (inventoryData.length === 0) {
-      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">正在連線 Google 試算表載入資料 (初次載入約需 5~8 秒)...</td></tr>`;
+      inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint">正在連線 Google 雲端試算表... (初次喚醒伺服器約需 5~15 秒)</td></tr>`;
     }
 
-    let success = false;
-    let attempts = 0;
-    const maxAttempts = 2; // 連線卡住時自動重試
-
-    while (!success && attempts < maxAttempts) {
-      attempts++;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12秒逾時防護
-
-        const res = await fetch(API_URL, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        const json = await res.json();
-        
-        if (Array.isArray(json)) {
-          inventoryData = json;
-          versionList = [];
-        } else {
-          inventoryData = json.inventory || [];
-          versionList = json.versions || [];
-        }
-
-        inventoryData = sortInventory(inventoryData);
-
-        // 存入快取供下次秒開
-        localStorage.setItem("inv_cache_data", JSON.stringify(inventoryData));
-        localStorage.setItem("inv_cache_vers", JSON.stringify(versionList));
-
-        updateCategorySelectors();
-        updateVersionSelectors();
-        renderTable();
-        success = true;
-      } catch (err) {
-        console.warn(`第 ${attempts} 次連線嘗試逾時或失敗:`, err);
-        if (attempts >= maxAttempts) {
-          if (inventoryData.length === 0) {
-            inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">
-              ⚠️ 連線至 Google 伺服器逾時。<br>
-              請點擊右上角「🔄 重新整理」再試一次，或確認試算表網路正常。
-            </td></tr>`;
-          }
-        }
+    try {
+      const res = await fetch(API_URL);
+      const json = await res.json();
+      
+      if (Array.isArray(json)) {
+        inventoryData = json;
+        versionList = [];
+      } else {
+        inventoryData = json.inventory || [];
+        versionList = json.versions || [];
       }
-    }
 
-    if (btnRefresh) {
-      btnRefresh.disabled = false;
-      btnRefresh.innerText = "🔄 重新整理";
+      inventoryData = sortInventory(inventoryData);
+
+      localStorage.setItem("inv_cache_data", JSON.stringify(inventoryData));
+      localStorage.setItem("inv_cache_vers", JSON.stringify(versionList));
+
+      updateCategorySelectors();
+      updateVersionSelectors();
+      renderTable();
+    } catch (err) {
+      console.error(err);
+      if (inventoryData.length === 0) {
+        inventoryList.innerHTML = `<tr><td colspan="8" class="status-hint" style="color:#ef4444;">
+          連線 Google 試算表時遇到延遲。<br>
+          請點擊上方「🔄 重新整理」按鈕再試一次！
+        </td></tr>`;
+      }
+    } finally {
+      if (btnRefresh) {
+        btnRefresh.disabled = false;
+        btnRefresh.innerText = "🔄 重新整理";
+      }
     }
   }
 
